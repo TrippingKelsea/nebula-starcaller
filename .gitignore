@@ -1,0 +1,33 @@
+# Binaries
+/starcaller
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / local state (DO NOT COMMIT)
+*.key
+*.pem
+*.crt
+!web/static/**/*.pem
+.env
+.env.*
+!.env.example
+config.local.*
+data/
