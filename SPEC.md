@@ -1,6 +1,6 @@
 # Nebula Starcaller — Specification
 
-**Status:** Draft v0.2 — living document
+**Status:** Draft v0.3 — living document
 **Last updated:** 2026-07-09
 
 ## 1. Purpose
@@ -19,20 +19,21 @@ Starcaller is the self-hosted analog of [Managed Nebula](https://nebula.defined.
 
 ### 2.1 Goals
 
-- Manage one or more Nebula CAs from a web UI, and expose the same operations via an API.
+- Manage one or more Nebula CAs from a web UI. **The GUI is the product.** A programmatic API may follow later but is not an MVP goal.
 - Serve as the CA — hold the signing key, perform the signing operation.
-- Enforce M-of-N approval policies per CA as a governance layer over signing.
 - Manage the full client lifecycle: issue, list, inspect, rotate, revoke.
 - Manage Nebula-native constructs that live in certs (networks, unsafe networks, groups) and keep them consistent across the CAs Starcaller operates.
-- Archive every issued cert, keypair, and rendered config bundle so operators can re-download them later.
-- Ship as a container image with the `nebula-cert` binary bundled inside.
+- Archive every issued cert, keypair, and a complete installable **bundle** (Nebula binary + certs + rendered config + install script) so operators can re-download them later.
+- Ship as a container image with the `nebula-cert` binary bundled inside, plus a curated set of `nebula` runtime binaries for the client platforms we support.
 
 ### 2.2 Non-goals
 
 - Not a general-purpose X.509 CA. Nebula's cert format is its own.
-- Not a Nebula config/orchestration tool (that's a separate problem).
+- Not a Nebula config/orchestration tool at runtime (Starcaller ships the initial config in the bundle; it does not push updates).
 - Not a substitute for `nebula-cert` — Starcaller shells out to it, not around it.
 - Not hardware-token-first. PKCS#11 / YubiKey-backed signing is deferred; the app holds the keys.
+- **Not API-first for MVP.** The HTTP endpoints exist to serve the GUI, not as a stable programmatic surface. Automation-friendly APIs are a fast-follow, not MVP.
+- **M-of-N approval workflow is deferred**, not MVP. The data model leaves room; the logic and UI come later.
 
 ## 3. Key design decisions
 
@@ -40,7 +41,7 @@ The following decisions were made after a design-time spike (see §11):
 
 1. **No hierarchical CAs.** `nebula-cert sign` does not produce intermediate CAs — signed certs are always leaves with ECDH-only keys. Starcaller does not model a root→intermediate→client hierarchy.
 2. **Starcaller is the signer.** The CA private key is held by the application and used directly by `nebula-cert sign`. This is a deliberate simplification over the earlier YubiKey-per-signer design — it removes hardware distribution logistics and lets the OIDC + approval layer carry the human-trust story.
-3. **Quorum is a governance artifact, not a cryptographic multi-sig.** M-of-N approval is enforced by Starcaller before it signs. The resulting Nebula cert has one signature (the CA's). The approval record — who approved, when, from what session — is preserved in the audit log as the load-bearing accountability trail.
+3. **Quorum is a governance artifact, not a cryptographic multi-sig, and it is deferred.** When M-of-N approval lands, it will be enforced by Starcaller before it signs; the resulting Nebula cert has one signature (the CA's), and the approval record — who approved, when, from what session — is preserved in the audit log as the accountability trail. Data model reserves the shape; MVP does not implement the workflow.
 4. **Multi-root as an available topology.** A network can trust multiple Starcaller-managed roots concurrently. This maps naturally onto Nebula's multi-CA trust bundle, and it's how Starcaller supports zero-downtime CA rotation.
 5. **Revocation is a distributed blocklist, not a CRL.** Nebula does not have a runtime CRL protocol — revocation is expressed as a local `pki.blocklist` entry in each host's config, listing certificate fingerprints to reject. Starcaller tracks revocation state and renders an up-to-date blocklist for operators to distribute.
 6. **Shell out to `nebula-cert`.** Do not vendor the Nebula cert package. Behavior stays identical to upstream.
@@ -97,10 +98,28 @@ Everything else (HTTP, templates, approval workflow, group management, blocklist
 
 Starcaller supports **one signing topology** at MVP: the app-held CA. Signing works as follows:
 
-1. A cert request arrives (from the web UI, API, or a machine token).
+1. A cert request arrives from the web UI.
 2. Starcaller validates the request against the CA's constraints (networks, groups, TTL bounds).
-3. If the CA has an approval policy, the request enters the approval queue and is not signed until M distinct approvers have marked it approved through the UI. Their approval events are recorded in the audit log with their OIDC identity and session context.
-4. Once approved (or immediately, if no policy), Starcaller retrieves the CA keypair from the store, materializes it to a temp file, invokes `nebula-cert sign`, reads the result, wipes the temp file, and returns the cert and key to the caller. The signed cert and its keypair are also written to the archive.
+3. Starcaller retrieves the CA keypair from the store, materializes it to a temp file (see §11.3), invokes `nebula-cert sign`, reads the result, wipes the temp file, and archives the cert + key + rendered bundle (§5a). The download is offered to the requester in-browser and remains available via the Archive.
+
+Post-MVP, an approval policy (§5.2) may sit between steps 2 and 3.
+
+### 5a. Root CA creation
+
+Creating a CA is a first-class GUI workflow that mirrors `nebula-cert ca` and adds the fields Starcaller needs to manage it going forward. The CA-create form collects:
+
+| Field | Nebula flag | Notes |
+|---|---|---|
+| Name | `-name` | Required. Human-readable and cert-encoded. |
+| Curve | `-curve` | `25519` (default) or `P256`. |
+| Networks | `-networks` | Required. Comma-separated CIDRs. Bounds subordinate certs. |
+| Unsafe networks | `-unsafe-networks` | Optional. Bounds subordinate cert routing scope. |
+| Groups | `-groups` | Optional. Bounds which groups subordinate certs may claim. Chosen from the group registry (§7). |
+| CA duration | `-duration` | Default 1y. |
+| Default cert TTL | (Starcaller-managed) | Default TTL applied to certs signed by this CA if the request doesn't specify. Must be < remaining CA lifetime. |
+| Description | (Starcaller-managed) | Free text. Not encoded in the cert. |
+
+On submit, Starcaller shells out to `nebula-cert ca` with the appropriate flags in a temp directory, reads the resulting `ca.crt` and `ca.key`, persists both to the Store (metadata) and Archive (key material), and wipes the temp directory.
 
 ### 5.1 Multi-root topology
 
@@ -148,12 +167,38 @@ Nebula CAs restrict which `-networks` and `-groups` a subordinate cert may claim
 
 For each issued cert:
 
-- **Issue** — `POST /api/certs` with name, networks, groups, TTL, requester. Enters approval flow if policy requires it; otherwise issued immediately. Cert, key, and rendered config bundle are archived server-side.
-- **List / inspect** — including a rendered decode of the cert. Any authorized user can view.
-- **Download** — re-fetch the archived cert / key / config bundle. Every download is audit-logged (who, when, what).
-- **Rotate** — re-issue with the same identity+groups but a fresh keypair and expiry. Old cert is marked `superseded_by`.
+- **Issue** — via the GUI, with name, networks, groups, TTL, lighthouse/relay flags. Cert, key, and complete bundle (§8a) are archived server-side. Signed bundle is offered as an immediate browser download and remains re-downloadable.
+- **List / inspect** — rendered decode of the cert, cert metadata, links to bundle download.
+- **Download bundle** — re-fetch the archived bundle. Every download is audit-logged (who, when, what).
+- **Rotate** — re-issue with the same identity+groups but a fresh keypair and expiry. Old cert is marked `superseded_by`. New bundle is archived.
 - **Revoke** — mark revoked in state, add fingerprint to the blocklist, log with reason.
-- **Blocklist** — `GET /api/blocklist/{ca_id}` returns the current list of revoked cert fingerprints for a CA, formatted for insertion into a Nebula host config's `pki.blocklist`. Operators are responsible for distributing this to their hosts; Starcaller does not push to hosts.
+- **Blocklist** — the CA detail view exposes the current list of revoked cert fingerprints for a CA, formatted for insertion into a Nebula host config's `pki.blocklist`. Downloadable as a YAML snippet. Operators distribute to their hosts; Starcaller does not push.
+
+### 8a. Bundle format
+
+A **bundle** is the complete artifact Starcaller produces when a host cert is signed. It is a `.tar.gz` archive with the following layout:
+
+```
+starcaller-<host>-<timestamp>/
+├── README.md                    # what this is, how to install
+├── install.sh                   # POSIX shell installer
+├── nebula                       # nebula runtime binary (platform-specific)
+├── nebula-cert                  # bundled for local inspection/rotation
+├── config.yml                   # rendered host config
+└── pki/
+    ├── host.crt                 # this host's cert
+    ├── host.key                 # this host's private key
+    └── ca.crt                   # trust bundle (may contain multiple roots)
+```
+
+Per-file notes:
+
+- **`nebula` binary** — the runtime, selected for the target platform declared at issuance. Starcaller ships a curated set (linux/amd64, linux/arm64, darwin/arm64, windows/amd64) built into the container image. Non-supported platforms get a bundle without a binary and a README note pointing at upstream releases.
+- **`config.yml`** — rendered from a template using the CA's declared networks, the requester-selected role (lighthouse / relay / host), and any Starcaller-managed defaults (log level, listen port). Config is a starting point, not a runtime-managed artifact.
+- **`install.sh`** — installs the binary to `/usr/local/bin/nebula`, drops `config.yml` and `pki/` under `/etc/nebula/`, installs a systemd unit, and prints next steps. Idempotent; safe to re-run for rotation.
+- **`ca.crt`** — always the current, complete trust bundle for the CA at time of issuance. If the network has been rotated to multi-root, all trusted roots are concatenated here.
+
+Bundles are archived alongside the cert record, addressed by the same cert ID. Rotation produces a new bundle; the old one remains downloadable and audit-logged.
 
 ## 9. Authentication
 
@@ -172,7 +217,18 @@ Two auth methods, both first-class:
 - Used for the initial admin account and for air-gapped deployments.
 - Password hashing: argon2id.
 
-Machines (CI, provisioning tools) authenticate with short-lived API tokens minted by an operator. Token scopes mirror the role model.
+Machine automation is out of MVP scope (§2.2). If added later, it will use short-lived tokens scoped to the role model.
+
+### 9.3 First-run bootstrap
+
+Starcaller's first admin user is **pre-defined via configuration**, not created through a web installer. On first startup:
+
+1. Starcaller reads `STARCALLER_BOOTSTRAP_USERNAME`, `STARCALLER_BOOTSTRAP_PASSWORD`, and optionally `STARCALLER_BOOTSTRAP_EMAIL` from the environment (or the config file).
+2. If no users exist in the Store, the bootstrap user is created with role `admin`, password hashed with argon2id, and a flag set to force WebAuthn enrollment on first login.
+3. If users already exist, the bootstrap variables are ignored (with a startup log line).
+4. The bootstrap variables are read once and never referenced again — safe to remove from config after first login, and expected to be removed.
+
+Rationale: pre-defined user closes the "open-signup-until-someone-registers" window that plagues self-hosted apps, and avoids a separate install wizard endpoint. It also means the first user's credentials are managed at deployment time by whatever mechanism deploys the container (systemd credentials, Docker secrets, k8s secrets, etc.).
 
 ## 10. State and archive backends
 
@@ -223,16 +279,23 @@ The container ships a `nebula-cert` binary. We need a version-pin policy and a w
 
 The first releasable version:
 
-1. App-held CAs (single topology).
+1. App-held CAs (single topology). Multi-root supported by having more than one.
 2. SQLite for both Store and Archive.
-3. Local auth (WebAuthn preferred, password fallback). OIDC in a fast-follow release.
-4. Full client lifecycle including blocklist rendering.
-5. Group registry read-only enforcement; no CA rotation.
-6. Approval workflow (M-of-N as governance).
-7. Server-side archival of certs, keys, config bundles, with download endpoint.
-8. Container image with bundled `nebula-cert`.
+3. Local auth (username + password + WebAuthn). Pre-defined first admin via env/config (§9.3).
+4. GUI-only. No stable programmatic API surface.
+5. Full client lifecycle: issue, list, inspect, rotate, revoke, blocklist rendering.
+6. CA-create form with all fields listed in §5a (name, curve, networks, unsafe networks, groups, durations, description).
+7. Server-side archival of complete bundles (§8a) with download.
+8. Group registry read-only enforcement; no CA rotation for group changes.
+9. Container image with bundled `nebula-cert` and per-platform `nebula` runtime binaries.
 
-Everything else in this spec is v2+ scope.
+**Explicitly deferred out of MVP:**
+- M-of-N approval workflow.
+- OIDC auth.
+- OpenBao Store/Archive backend.
+- CA rotation for group registry changes.
+- PKCS#11 / hardware-backed CA keys.
+- Programmatic / automation-friendly API.
 
 ## 13. Roadmap
 
@@ -241,9 +304,11 @@ Everything else in this spec is v2+ scope.
 | M0 | Repo scaffold, this spec (done). |
 | M1 | MVP as defined in §12. |
 | M2 | OIDC auth. |
-| M3 | OpenBao backend (Store and Archive). |
-| M4 | Group registry with CA rotation workflow. |
-| M5 | PKCS#11 / YubiKey-backed CA keys (deferred — not a near-term priority). |
+| M3 | M-of-N approval workflow (§5.2). |
+| M4 | OpenBao backend (Store and Archive). |
+| M5 | Group registry with CA rotation workflow. |
+| M6 | Programmatic API with token auth. |
+| M7 | PKCS#11 / YubiKey-backed CA keys (deferred — not a near-term priority). |
 
 ## 14. Prior art referenced
 
