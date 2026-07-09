@@ -1,0 +1,69 @@
+# Nebula Starcaller — Implementation Log
+
+Running log of implementation decisions, assumptions, and known deviations from SPEC.md.
+
+## 2026-07-09 — M1 kickoff
+
+### Approach
+
+Implementing M1 per SPEC v0.3 §12. Building bottom-up: config → store → archive → auth → CA service → cert service → bundle builder → HTTP/views → container.
+
+### Judgment calls made without asking
+
+Documenting here rather than blocking on each. Push back if any of these are wrong.
+
+**Language / framework:**
+- Go 1.26 (as available on host).
+- Router: `github.com/go-chi/chi/v5`. Chosen over stdlib `http.ServeMux` because we need middleware composition (auth, csrf, logging) and Chi is the least-intrusive option.
+- SQLite: `modernc.org/sqlite` (pure Go). Keeps CGO off, so the container build stays simple even alongside the CGO'd `nebula-cert`.
+- WebAuthn: `github.com/go-webauthn/webauthn`.
+- Password hashing: `golang.org/x/crypto/argon2`.
+- YAML: `gopkg.in/yaml.v3` for config parsing and `config.yml` bundle rendering.
+- CSRF: `github.com/gorilla/csrf`.
+- Session storage: sessions live in SQLite (`session` table), cookie carries only session ID. Avoids a second dependency.
+
+**Testing:**
+- Table-driven where practical.
+- SQLite tests use `:memory:` databases.
+- CA/cert service tests use a fake `nebula-cert` shim (a shell script or a Go-built stub on PATH) so we don't require the real binary during unit tests. A separate integration test invokes the real `nebula-cert`.
+- Aim: >70% line coverage across `internal/`.
+
+**Config precedence:** env vars > config file > defaults. Config file at `/etc/starcaller/config.yml` by default; overridable with `STARCALLER_CONFIG`.
+
+**Bootstrap semantics:**
+- `STARCALLER_BOOTSTRAP_USERNAME` + `STARCALLER_BOOTSTRAP_PASSWORD` env (or `bootstrap:` block in config).
+- If no user exists → create as admin, hash password with argon2id, mark `force_webauthn_enrollment=true`.
+- If any user exists → ignore bootstrap vars, log warning if set.
+
+**Domain model note:** SPEC uses `signer` in the data model but §5 dropped per-signer topologies. Reinterpreting `signer` as legacy — MVP doesn't need this table. Approval-related tables (`approval_policy`, `approval`, `request`) are also deferred per §12; schema will include stubs so migrations don't require re-work when approval workflow lands.
+
+**Package layout:**
+```
+cmd/starcaller/          main
+internal/config/         config loading
+internal/domain/         pure types (CA, Cert, User, etc.)
+internal/store/          Store interface + SQLite impl
+internal/archive/        Archive interface + SQLite impl
+internal/auth/           password, session, webauthn
+internal/ca/             CA service (shells to nebula-cert)
+internal/cert/           cert service
+internal/bundle/         bundle builder
+internal/server/         HTTP handlers + middleware
+web/templates/           HTML templates
+web/static/              css, htmx, alpine
+```
+
+**Nebula binaries in container:** Fetched at `docker build` time from GitHub releases for linux/amd64, linux/arm64, darwin/arm64, windows/amd64. Version pinned in a `NEBULA_VERSION` build arg. `nebula-cert` for the host arch is placed on the container's PATH; the runtime `nebula` binaries for each supported platform are staged under `/opt/starcaller/binaries/<os>-<arch>/nebula[.exe]` for inclusion in bundles.
+
+**In-flight CA key hygiene (SPEC §11.3):** Materialize CA key to a file under `/dev/shm/starcaller-<random>/` (tmpfs), invoke `nebula-cert`, then `os.Remove` and best-effort `unix.Munlock`/overwrite. On systems without `/dev/shm` (e.g., macOS in dev), fall back to `os.TempDir()` with a WARN log. Full memfd_create is nice-to-have but adds syscall complexity; deferred.
+
+### Open assumptions I'll revisit if they bite
+
+- Bundle install.sh assumes systemd. For non-systemd hosts, install.sh will print manual instructions instead. macOS/Windows install stories are print-only for MVP.
+- Group registry: `group` table starts empty; a group is auto-added the first time a CA declares it. Explicit "add group to registry" UI is v2.
+- Default cert TTL fallback chain: request → CA default → 8760h (1y).
+- Config bundle `pki.blocklist` rendering: revoked certs are rendered as fingerprints; template supports multi-fingerprint list.
+
+### Deviations from SPEC (if any)
+
+*(none yet)*
