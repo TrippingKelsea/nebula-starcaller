@@ -66,4 +66,6 @@ web/static/              css, htmx, alpine
 
 ### Deviations from SPEC (if any)
 
-*(none yet)*
+**2026-07-09 — WebAuthn testing scope.** Full WebAuthn requires a browser or CTAP2 mock authenticator. The go-webauthn library has integration test helpers but exercising them well is a large investment. Decision for M1: implement password + session auth thoroughly with unit tests. Wire the WebAuthn library into begin-registration / finish-registration / begin-login / finish-login handlers. Unit-test only the code around the library (session bookkeeping, credential persistence, error paths). End-to-end WebAuthn flow will be validated manually in the browser as part of M1 acceptance. Documented as a known test gap.
+
+**2026-07-09 — `signer` table dropped.** SPEC §6 lists a `signer` table for per-signer YubiKey identities. That model was superseded when we moved to app-held CA (§3 decision 2 in SPEC v0.3). No `signer` table in the SQLite schema.
