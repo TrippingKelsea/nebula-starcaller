@@ -1,0 +1,41 @@
+{{define "body"}}
+{{with .Data}}
+<div class="card narrow">
+  <h1>Issue certificate from {{.Name}}</h1>
+  <form method="post" action="/ca/{{.ID}}/certs" class="stacked">
+    <label>Host name <input name="name" required placeholder="host-01"></label>
+    <label>Networks (one per line, host CIDR e.g. 10.42.0.5/16)
+      <textarea name="networks" rows="3" required></textarea>
+    </label>
+    <label>Unsafe networks (optional)
+      <textarea name="unsafe_networks" rows="2"></textarea>
+    </label>
+    <label>Groups (optional; must be within CA's declared groups)
+      <textarea name="groups" rows="2" placeholder="{{join "&#10;" .Groups}}"></textarea>
+    </label>
+    <label>Host role
+      <select name="host_role">
+        <option value="host">host (default)</option>
+        <option value="lighthouse">lighthouse</option>
+        <option value="relay">relay</option>
+      </select>
+    </label>
+    <label>Target platform
+      <select name="os">
+        <option value="linux">linux</option>
+        <option value="darwin">darwin</option>
+        <option value="windows">windows</option>
+      </select>
+      <select name="arch">
+        <option value="amd64">amd64</option>
+        <option value="arm64">arm64</option>
+      </select>
+    </label>
+    <label>TTL (optional; falls back to CA default)
+      <input name="ttl" placeholder="e.g. 720h">
+    </label>
+    <button type="submit">Issue certificate</button>
+  </form>
+</div>
+{{end}}
+{{end}}

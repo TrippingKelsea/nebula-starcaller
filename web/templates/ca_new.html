@@ -1,0 +1,27 @@
+{{define "body"}}
+<div class="card narrow">
+  <h1>New Certificate Authority</h1>
+  <form method="post" action="/ca" class="stacked">
+    <label>Name <input name="name" required></label>
+    <label>Description <textarea name="description" rows="2"></textarea></label>
+    <label>Curve
+      <select name="curve">
+        <option value="25519">25519 (Ed25519 — default)</option>
+        <option value="P256">P256 (NIST curve — required for future YubiKey)</option>
+      </select>
+    </label>
+    <label>Networks (one per line, CIDR)
+      <textarea name="networks" rows="3" placeholder="10.42.0.0/16" required></textarea>
+    </label>
+    <label>Unsafe networks (one per line, optional)
+      <textarea name="unsafe_networks" rows="2"></textarea>
+    </label>
+    <label>Groups (one per line, optional)
+      <textarea name="groups" rows="2" placeholder="servers&#10;workstations"></textarea>
+    </label>
+    <label>CA duration <input name="duration" value="8760h" placeholder="e.g. 8760h (1y)"></label>
+    <label>Default cert TTL <input name="default_ttl" value="720h" placeholder="e.g. 720h (30d)"></label>
+    <button type="submit">Create CA</button>
+  </form>
+</div>
+{{end}}

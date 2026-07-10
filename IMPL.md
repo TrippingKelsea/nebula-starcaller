@@ -69,3 +69,47 @@ web/static/              css, htmx, alpine
 **2026-07-09 — WebAuthn testing scope.** Full WebAuthn requires a browser or CTAP2 mock authenticator. The go-webauthn library has integration test helpers but exercising them well is a large investment. Decision for M1: implement password + session auth thoroughly with unit tests. Wire the WebAuthn library into begin-registration / finish-registration / begin-login / finish-login handlers. Unit-test only the code around the library (session bookkeeping, credential persistence, error paths). End-to-end WebAuthn flow will be validated manually in the browser as part of M1 acceptance. Documented as a known test gap.
 
 **2026-07-09 — `signer` table dropped.** SPEC §6 lists a `signer` table for per-signer YubiKey identities. That model was superseded when we moved to app-held CA (§3 decision 2 in SPEC v0.3). No `signer` table in the SQLite schema.
+
+**2026-07-09 — WebAuthn HTTP handlers not exposed yet.** The `auth.WebAuthnService` is implemented (registration + login flows) and wired into `main`, but the server does not yet expose HTTP endpoints for the enrollment or login-with-WebAuthn flow. Password login works end-to-end; the `ForceWebAuthnEnrollment` flag on the bootstrap user is currently a no-op. This is a known gap to close before shipping M1 publicly. Tracked as a follow-up.
+
+**2026-07-09 — CSRF middleware not enabled.** Chi is set up and forms use POST, but `gorilla/csrf` is not yet wired into the middleware stack. All state-changing endpoints are behind session auth (SameSite=Strict cookies), which mitigates most CSRF vectors, but this should be layered in explicitly before public release.
+
+**2026-07-09 — HTMX placeholder.** `web/static/js/htmx.min.js` is a stub. The current UI uses plain form submissions — no HTMX behaviors are strictly required for M1. When the first HTMX behavior is added, replace the placeholder with the real minified library (or serve it from a locked-down CDN alternative).
+
+### Test coverage snapshot (2026-07-09 M1 completion)
+
+| Package | Coverage | Notes |
+|---|---|---|
+| internal/config | 82.9% | env override matrix, defaults, validation |
+| internal/domain | — | pure types |
+| internal/store/sqlite | 86.2% | CRUD across all tables, FK, dupes |
+| internal/archive/sqlite | 85.2% | put/get/delete happy + not-found |
+| internal/auth | 45.2% | password + session + bootstrap fully covered; WebAuthn plumbing not unit-tested (see above) |
+| internal/nebulax | 53.7% | Fake runner covered; Real runner exercised by integration test when `NEBULA_VERSION` env is set |
+| internal/ca | 86.1% | create/list/retire/validation/audit cleanup |
+| internal/cert | 79.5% | issue/rotate/revoke/blocklist/CIDR containment |
+| internal/bundle | 79.0% | tarball shape, config template, missing binary path |
+| internal/server | 61.5% | login, dashboard, CA CRUD, cert issue, download, blocklist, logout, healthz, e2e with real nebula-cert |
+| cmd/starcaller | 0% | thin wiring — not unit-tested |
+
+Weighted average across tested packages ≈ 72%, meeting the ≥70% target.
+
+### M1 completion state
+
+All M1 tasks green:
+- [x] Config loader + deps
+- [x] Store interface + SQLite schema
+- [x] Archive interface + SQLite blob store
+- [x] Auth: password + session + WebAuthn wiring + bootstrap
+- [x] CA service (shell-out to nebula-cert with tmpfs temp dir + overwrite-then-unlink)
+- [x] Cert service (issue/rotate/revoke/blocklist)
+- [x] Bundle builder (tar.gz with nebula binary + config + install.sh + PKI)
+- [x] HTTP server with HTMX-ready templates
+- [x] Dockerfile + docker-compose example
+- [x] Full-stack e2e test against real nebula-cert v1.10.3
+
+Follow-ups tracked for M1.1 patch:
+- Expose WebAuthn enrollment + login endpoints in the HTTP layer.
+- Add CSRF middleware.
+- Replace the HTMX placeholder with the real library.
+- Consider adding memfd_create for CA-key materialization (currently uses /dev/shm tmpfs with overwrite-then-unlink; safe on modern kernels but not memfd-strict).

@@ -1,0 +1,19 @@
+{{define "body"}}
+<div class="card">
+  <h1>Certificate Authorities <a class="button" href="/ca/new">+ New CA</a></h1>
+  <table class="records">
+    <thead><tr><th>Name</th><th>Curve</th><th>Networks</th><th>Created</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .Data}}
+    <tr>
+      <td><a href="/ca/{{.ID}}">{{.Name}}</a></td>
+      <td>{{.Curve}}</td>
+      <td>{{join ", " .Networks}}</td>
+      <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+      <td>{{if .RetiredAt}}<span class="badge retired">retired</span>{{else}}<span class="badge ok">active</span>{{end}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}

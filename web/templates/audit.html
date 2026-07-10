@@ -1,0 +1,19 @@
+{{define "body"}}
+<div class="card">
+  <h1>Audit log</h1>
+  <table class="records">
+    <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Subject</th><th>Details</th></tr></thead>
+    <tbody>
+    {{range .Data}}
+    <tr>
+      <td>{{.At.Format "2006-01-02 15:04:05 MST"}}</td>
+      <td>{{.Actor}}</td>
+      <td><code>{{.Action}}</code></td>
+      <td>{{.Subject}}</td>
+      <td><small class="muted">{{.Details}}</small></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}

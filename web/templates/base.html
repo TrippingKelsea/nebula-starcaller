@@ -1,0 +1,30 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — Nebula Starcaller</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/js/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">Nebula&nbsp;Starcaller</a>
+  <nav>
+    {{if .User.Username}}
+      <a href="/ca">CAs</a>
+      <a href="/audit">Audit</a>
+      <form method="post" action="/logout" style="display:inline">
+        <button type="submit" class="link">Sign out ({{.User.Username}})</button>
+      </form>
+    {{end}}
+  </nav>
+</header>
+<main>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{block "body" .}}{{end}}
+</main>
+<footer><small>Nebula Starcaller — self-hosted Nebula PKI</small></footer>
+</body>
+</html>
+{{end}}

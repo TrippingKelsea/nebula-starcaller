@@ -1,0 +1,54 @@
+{{define "body"}}
+{{with .Data}}
+<div class="card">
+  <h1>{{.CA.Name}}
+    {{if .CA.RetiredAt}}<span class="badge retired">retired</span>{{else}}<span class="badge ok">active</span>{{end}}
+  </h1>
+  <dl class="props">
+    <dt>ID</dt><dd><code>{{.CA.ID}}</code></dd>
+    <dt>Curve</dt><dd>{{.CA.Curve}}</dd>
+    <dt>Networks</dt><dd>{{join ", " .CA.Networks}}</dd>
+    <dt>Unsafe networks</dt><dd>{{join ", " .CA.UnsafeNetworks}}</dd>
+    <dt>Groups</dt><dd>{{join ", " .CA.Groups}}</dd>
+    <dt>Created</dt><dd>{{.CA.CreatedAt.Format "2006-01-02 15:04 MST"}}</dd>
+    <dt>Description</dt><dd>{{.CA.Description}}</dd>
+  </dl>
+  <div class="actions">
+    {{if not .CA.RetiredAt}}
+      <a class="button" href="/ca/{{.CA.ID}}/certs/new">+ Issue certificate</a>
+    {{end}}
+    <a class="button" href="/ca/{{.CA.ID}}/blocklist">Blocklist snippet</a>
+    {{if not .CA.RetiredAt}}
+      <form method="post" action="/ca/{{.CA.ID}}/retire" onsubmit="return confirm('Retire this CA? It will remain visible but cannot issue new certs.');" style="display:inline">
+        <button class="danger">Retire CA</button>
+      </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Issued certificates ({{len .Certs}})</h2>
+  {{if .Certs}}
+  <table class="records">
+    <thead><tr><th>Name</th><th>Networks</th><th>Not after</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .Certs}}
+    <tr>
+      <td><a href="/certs/{{.ID}}">{{.Name}}</a></td>
+      <td>{{join ", " .Networks}}</td>
+      <td>{{.NotAfter.Format "2006-01-02"}}</td>
+      <td>
+        {{if .RevokedAt}}<span class="badge revoked">revoked</span>
+        {{else if .SupersededBy}}<span class="badge">superseded</span>
+        {{else}}<span class="badge ok">active</span>{{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No certificates issued yet.</p>
+  {{end}}
+</div>
+{{end}}
+{{end}}

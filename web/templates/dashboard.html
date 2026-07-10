@@ -1,0 +1,49 @@
+{{define "body"}}
+{{with .Data}}
+<div class="grid">
+  <section class="card">
+    <h2>Certificate Authorities <a class="button" href="/ca/new">+ New CA</a></h2>
+    {{if .CAs}}
+    <ul class="list">
+      {{range .CAs}}
+      <li>
+        <a href="/ca/{{.ID}}"><strong>{{.Name}}</strong></a>
+        <span class="muted">{{.Curve}} · {{join ", " .Networks}}</span>
+        {{if .RetiredAt}}<span class="badge retired">retired</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="muted">No CAs yet. <a href="/ca/new">Create the first one</a>.</p>
+    {{end}}
+  </section>
+
+  <section class="card">
+    <h2>Recent certificates</h2>
+    {{if .RecentCerts}}
+    <ul class="list">
+      {{range .RecentCerts}}
+      <li>
+        <a href="/certs/{{.ID}}">{{.Name}}</a>
+        <span class="muted">{{.NotAfter.Format "2006-01-02"}}</span>
+        {{if .RevokedAt}}<span class="badge revoked">revoked</span>{{end}}
+        {{if .SupersededBy}}<span class="badge">superseded</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="muted">No certificates issued yet.</p>
+    {{end}}
+  </section>
+
+  <section class="card">
+    <h2>Recent activity</h2>
+    <ol class="audit">
+      {{range .Audit}}
+      <li><span class="muted">{{.At.Format "2006-01-02 15:04"}}</span> — <code>{{.Action}}</code> on {{.Subject}}</li>
+      {{end}}
+    </ol>
+  </section>
+</div>
+{{end}}
+{{end}}

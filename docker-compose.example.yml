@@ -1,0 +1,25 @@
+# Example docker-compose for local trials.
+# Copy to docker-compose.yml, set a strong bootstrap password, then `docker compose up`.
+#
+# The generated CA keys live in the `starcaller_data` volume.
+# For production use, ensure the underlying volume is on encrypted storage
+# (see SPEC §3 decision 8).
+
+services:
+  starcaller:
+    build: .
+    image: nebula-starcaller:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      STARCALLER_BOOTSTRAP_USERNAME: admin
+      STARCALLER_BOOTSTRAP_PASSWORD: change-me-please
+      STARCALLER_BOOTSTRAP_EMAIL: admin@example.internal
+      STARCALLER_DEV_MODE: "false"
+      STARCALLER_RP_ORIGINS: "http://localhost:8080"
+    volumes:
+      - starcaller_data:/var/lib/starcaller
+    restart: unless-stopped
+
+volumes:
+  starcaller_data: {}

@@ -1,0 +1,42 @@
+{{define "body"}}
+{{with .Data}}
+<div class="card">
+  <h1>{{.Cert.Name}}
+    {{if .Cert.RevokedAt}}<span class="badge revoked">revoked</span>
+    {{else if .Cert.SupersededBy}}<span class="badge">superseded</span>
+    {{else}}<span class="badge ok">active</span>{{end}}
+  </h1>
+  <dl class="props">
+    <dt>Issued by</dt><dd><a href="/ca/{{.CA.ID}}">{{.CA.Name}}</a></dd>
+    <dt>Fingerprint</dt><dd><code>{{.Cert.Fingerprint}}</code></dd>
+    <dt>Networks</dt><dd>{{join ", " .Cert.Networks}}</dd>
+    <dt>Groups</dt><dd>{{join ", " .Cert.Groups}}</dd>
+    <dt>Role</dt><dd>{{.Cert.HostRole}}</dd>
+    <dt>Platform</dt><dd>{{.Cert.Platform.OS}}/{{.Cert.Platform.Arch}}</dd>
+    <dt>Valid</dt><dd>{{.Cert.NotBefore.Format "2006-01-02 15:04"}} → {{.Cert.NotAfter.Format "2006-01-02 15:04"}}</dd>
+    <dt>Issued</dt><dd>{{.Cert.CreatedAt.Format "2006-01-02 15:04 MST"}} by {{.Cert.IssuedBy}}</dd>
+    {{if .Cert.RevokedAt}}
+    <dt>Revoked</dt><dd>{{.Cert.RevokedAt.Format "2006-01-02 15:04 MST"}} — {{.Cert.RevocationReason}}</dd>
+    {{end}}
+    {{if .Cert.SupersededBy}}
+    <dt>Superseded by</dt><dd><a href="/certs/{{.Cert.SupersededBy}}">{{.Cert.SupersededBy}}</a></dd>
+    {{end}}
+  </dl>
+  <div class="actions">
+    <a class="button primary" href="/certs/{{.Cert.ID}}/bundle">Download bundle (.tar.gz)</a>
+    {{if not .Cert.RevokedAt}}
+      {{if not .Cert.SupersededBy}}
+      <form method="post" action="/certs/{{.Cert.ID}}/rotate" style="display:inline">
+        <button>Rotate</button>
+      </form>
+      <form method="post" action="/certs/{{.Cert.ID}}/revoke" style="display:inline"
+            onsubmit="return confirm('Revoke this cert? The fingerprint will be added to the blocklist.');">
+        <input type="hidden" name="reason" id="revoke_reason">
+        <button type="button" class="danger" onclick="var r=prompt('Reason?','key rotation'); if(r){document.getElementById('revoke_reason').value=r; this.form.submit()}">Revoke</button>
+      </form>
+      {{end}}
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}
